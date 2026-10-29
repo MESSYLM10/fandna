@@ -1,0 +1,21 @@
+[server]
+enableStaticServing = true
+
+[client]
+toolbarMode = "minimal"
+
+[theme]
+base = "light"
+primaryColor = "#007A4D"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F1F6F3"
+textColor = "#1D2B24"
+borderColor = "#D9E3DD"
+font = "Archivo"
+baseRadius = "0.5rem"
+
+[[theme.fontFaces]]
+family = "Archivo"
+url = "app/static/archivo.woff2"
+weight = "100 900"
+style = "normal"
