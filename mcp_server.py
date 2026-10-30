@@ -14,10 +14,12 @@ Keys come from the same places as the app: QLOO_API_KEY / GROQ_API_KEY, or the q
 import os
 import sys
 from pathlib import Path
+from typing import Annotated, Literal
 
 os.chdir(Path(__file__).parent)            # cache, prompt and demo seed live next to this file
 
 from mcp.server.fastmcp import FastMCP     # noqa: E402
+from pydantic import Field                 # noqa: E402
 
 import brief                               # noqa: E402
 import demo_seed                           # noqa: E402
@@ -31,6 +33,14 @@ mcp = FastMCP("fandna", instructions=(
     "Ages: 35_and_younger, 36_to_55, 55_and_older. Kinds: artists, brands, places, tags."))
 
 
+Kind = Annotated[Literal["artists", "brands", "places", "tags"],
+                 Field(description="Type of Qloo signal: artists, brands, places (venues) or tags (taste tags)")]
+Age = Annotated[Literal["35_and_younger", "36_to_55", "55_and_older"], Field(description="Qloo age band")]
+Gender = Annotated[Literal["men", "women", "everyone"], Field(description="Audience gender")]
+City = Annotated[str, Field(description="City; Johannesburg is the only verified one")]
+Club = Annotated[str, Field(description="Club name as fans say it, e.g. Kaizer Chiefs")]
+
+
 def _safe(fn, **kwargs) -> dict:
     try:
         return fn(**kwargs)
@@ -41,35 +51,37 @@ def _safe(fn, **kwargs) -> dict:
 
 
 @mcp.tool()
-def audience_tastes(kind: str, club: str = "", age: str = "35_and_younger",
-                    gender: str = "men", city: str = "Johannesburg") -> dict:
+def audience_tastes(kind: Kind, club: Annotated[str, Field(description="Optional club, e.g. Kaizer Chiefs")] = "",
+                    age: Age = "35_and_younger", gender: Gender = "men", city: City = "Johannesburg") -> dict:
     """Top Qloo artists, brands, places or taste tags for an audience. With a club, each item is
     marked club_specific when it appears only for that club's fans."""
     return _safe(tools.audience_tastes, kind=kind, club=club, age=age, gender=gender, city=city)
 
 
 @mcp.tool()
-def compare_clubs(kind: str, club_a: str, club_b: str, age: str = "35_and_younger",
-                  gender: str = "men", city: str = "Johannesburg") -> dict:
+def compare_clubs(kind: Kind, club_a: Club, club_b: Club, age: Age = "35_and_younger",
+                  gender: Gender = "men", city: City = "Johannesburg") -> dict:
     """Compare two clubs' fans in Qloo for one kind of signal: shared items and items unique to each."""
     return _safe(tools.compare_clubs, kind=kind, club_a=club_a, club_b=club_b, age=age, gender=gender, city=city)
 
 
 @mcp.tool()
-def entity_fans(name: str) -> dict:
+def entity_fans(name: Annotated[str, Field(description="Brand, artist or place, e.g. Bathu")]) -> dict:
     """Age and gender affinity of the audience of a brand, artist or place in Qloo."""
     return _safe(tools.entity_fans, name=name)
 
 
 @mcp.tool()
-def find_entity(name: str) -> dict:
+def find_entity(name: Annotated[str, Field(description="Name to search for in Qloo")]) -> dict:
     """Search Qloo for an entity (artist, brand, place, team) and return the closest matches."""
     return _safe(tools.find_entity, name=name)
 
 
 @mcp.tool()
-def campaign_brief(club: str, objective: str = "Fill the stadium for the next home match",
-                   budget_zar: int = 250_000, age: str = "35_and_younger", gender: str = "men") -> str:
+def campaign_brief(club: Club, objective: Annotated[str, Field(description="What the campaign must achieve")]
+                   = "Fill the stadium for the next home match",
+                   budget_zar: Annotated[int, Field(description="Total budget in rand", ge=20_000)] = 250_000,
+                   age: Age = "35_and_younger", gender: Gender = "men") -> str:
     """FanDNA's full campaign brief for a club's fans in Johannesburg, as Markdown: three concepts,
     each with what Qloo shows, what it suggests, activation, budget (10% contingency), KPIs and
     what to validate before spending. Every cited signal is checked against Qloo's results."""
