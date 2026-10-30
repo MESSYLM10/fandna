@@ -30,7 +30,10 @@ demo_seed.load_if_empty()
 mcp = FastMCP("fandna", instructions=(
     "FanDNA turns Qloo taste data about South African football fans into campaign evidence. "
     "Qloo shows affinity (what an audience ranks highly), not behaviour. Johannesburg is the verified city. "
-    "Ages: 35_and_younger, 36_to_55, 55_and_older. Kinds: artists, brands, places, tags."))
+    "Ages: 35_and_younger, 36_to_55, 55_and_older. Kinds: artists, brands, places, tags. "
+    "Typical flow: audience_tastes(kind, club) to see what a club's fans rank that the whole audience doesn't; "
+    "compare_clubs for two clubs; entity_fans to check who a brand's audience really is; "
+    "campaign_brief for a full, checked campaign plan. Cite only names the tools return."))
 
 
 Kind = Annotated[Literal["artists", "brands", "places", "tags"],

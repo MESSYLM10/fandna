@@ -6,6 +6,24 @@ FanDNA turns Qloo's taste data for a football club's supporters into three campa
 
 Live demo: `<your Streamlit URL>` · Built for the [Qloo Agentic Hackathon](https://qloo.devpost.com/)
 
+## Verify each claim
+
+| Claim | Where to look | How it's tested |
+| --- | --- | --- |
+| Agentic tool: an LLM chooses and calls Qloo tools | `agent.py` (Groq tool calling, at most 3 calls), `tools.py` | `test_agent.py`; live: `python live_check.py` (step 4) |
+| MCP server: Qloo integrated into existing agents | `mcp_server.py` (5 tools, typed schemas) | `test_mcp.py`; live: `python mcp_demo.py` |
+| Non-trivial Qloo use | `qloo.py` (search, insights with and without a club, demographics, caching, retries), `tools.py` | `test_qloo.py` |
+| Every claim checked against Qloo, in code | `brief.py` (`ground`, `observed`), `agent.py` (bold-name check) | `test_brief.py`, `test_agent.py` |
+| Rate limits handled | `qloo.py` (`_fetch`, cache), `brief.py` (`_call`) | `test_qloo.py`, `test_brief.py`; live: `python live_check.py` (step 3) |
+
+**Try the MCP server in three commands.** Four of the five tools need only a Qloo key; `campaign_brief` also needs a Groq key.
+
+```bash
+git clone https://github.com/MESSYLM10/fandna && cd fandna
+python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
+QLOO_API_KEY=your-hackathon-key python mcp_demo.py     # starts the server, connects, lists tools, calls compare_clubs
+```
+
 ## What it does
 
 1. **Shows what Qloo knows about the fans.** For young men in Johannesburg, Qloo's top brands are Topman, BMW and Tag Heuer. Add Kaizer Chiefs to the audience and they become Hunter's Cider, Power Play, TelkomSA, Cell C and Bathu. FanDNA shows both lists side by side and marks what appears only for the club's fans.
@@ -68,6 +86,8 @@ Tool outputs carry names and ranks only, so a question costs roughly 4,000–6,0
 python mcp_server.py           # stdio, for Claude Desktop and similar clients
 python mcp_server.py --http    # streamable HTTP at http://127.0.0.1:8000/mcp
 ```
+
+To see it working without any other app: `python mcp_demo.py` starts the server, connects to it as an MCP client, lists the tools and calls `compare_clubs`. To explore the tools in a browser, use the official MCP Inspector: `npx @modelcontextprotocol/inspector .venv/bin/python mcp_server.py`.
 
 Claude Desktop, in `claude_desktop_config.json`:
 
