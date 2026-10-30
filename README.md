@@ -12,6 +12,8 @@ Live demo: `<your Streamlit URL>` · Built for the [Qloo Agentic Hackathon](http
 2. **Writes three campaign concepts from that evidence** and recommends one to run first. Each concept has an activation plan, channels, a budget in rand, KPIs, and a list of what to validate before spending.
 3. **Separates what Qloo shows from what the model suggests.** The "Qloo:" line under each signal (its rank, and whether it is specific to the club) is written by code from the API response. The model only writes the interpretation.
 4. **Compares itself with a generic AI.** The same request is sent to the same model without Qloo's data, and its claims are checked against Qloo's results. That shows what Qloo adds.
+5. **Ask FanDNA, a research agent.** Ask a follow-up by typing or speaking ("How do Kaizer Chiefs fans differ from Orlando Pirates fans?", "Who are Bathu's fans?", "What changes if we target women 18 to 35?"). The agent decides which Qloo tools to call, shows each lookup, and checks every name in its answer against what Qloo returned.
+6. **Works inside other agents.** `mcp_server.py` exposes FanDNA's Qloo tools and the full campaign brief over MCP, so Claude Desktop, Cursor or any MCP client can use them.
 
 ## How it works
 
@@ -21,7 +23,22 @@ form -> qloo.py: 9 fixed Qloo calls, cached in SQLite -> evidence JSON
      -> checks in code -> app.py
 ```
 
-The Qloo calls are fixed: there is no agent loop deciding what to fetch, so cost and latency are predictable.
+The brief's Qloo calls are fixed, so its cost and latency are predictable. Follow-up questions go to the agent:
+
+```
+question (typed, or spoken -> Groq Whisper)
+  -> agent.py: Groq tool calling, at most 3 tool calls
+       tools.py: audience_tastes | compare_clubs | entity_fans   (cached Qloo calls, compact JSON)
+  -> answer with every Qloo item in bold -> each bold name checked against the tool results
+```
+
+| Agent tool | Qloo calls | Returns |
+| --- | --- | --- |
+| `audience_tastes(kind, club?, age, gender)` | `/search`, `/v2/insights` ×1–2 | Top items for the audience; with a club, which are specific to its fans |
+| `compare_clubs(kind, club_a, club_b)` | `/search` ×2, `/v2/insights` ×2 | Shared items and items unique to each club's fans |
+| `entity_fans(name)` | `/search`, `/v2/insights` with `filter.type=urn:demographics` | Age and gender affinity of a brand's, artist's or place's audience |
+
+Tool outputs carry names and ranks only, so a question costs roughly 4,000–6,000 Groq tokens. Answers are cached by question and context.
 
 | Call | Purpose |
 | --- | --- |
@@ -44,6 +61,30 @@ The Qloo calls are fixed: there is no agent loop deciding what to fetch, so cost
 - **Groq:** briefs are cached by their inputs, so a reviewed brief is the one people see, and "Regenerate" writes a new one. The Groq SDK's own retries are off. On a rate limit, FanDNA tries the next model once (`openai/gpt-oss-120b`, then `openai/gpt-oss-20b`) and never retries in a loop.
 - **Retries:** Qloo timeouts and 5xx errors get 2 retries with backoff. A 429 is retried once only if Qloo asks for a wait of 10 seconds or less. A 401 stops immediately with a setup message.
 - **Demo seed:** `demo_seed.json` holds the reviewed demo. A fresh host loads it once into its empty cache, so the first visitor needs no API call.
+
+## Use FanDNA from another agent (MCP)
+
+```bash
+python mcp_server.py           # stdio, for Claude Desktop and similar clients
+python mcp_server.py --http    # streamable HTTP at http://127.0.0.1:8000/mcp
+```
+
+Claude Desktop, in `claude_desktop_config.json`:
+
+```json
+{"mcpServers": {"fandna": {"command": "/path/to/fandna/.venv/bin/python",
+                           "args": ["/path/to/fandna/mcp_server.py"]}}}
+```
+
+| MCP tool | What it does |
+| --- | --- |
+| `audience_tastes` | Top Qloo artists, brands, places or taste tags for an audience, optionally a club's fans |
+| `compare_clubs` | Shared and unique signals for two clubs' fans |
+| `entity_fans` | Age and gender affinity of an entity's audience |
+| `find_entity` | Qloo search, closest matches |
+| `campaign_brief` | The full FanDNA brief as Markdown, with every signal checked |
+
+Keys come from the same places as the app.
 
 ## Run it locally
 
@@ -73,8 +114,8 @@ On Streamlit Community Cloud, put `QLOO_API_KEY` and `GROQ_API_KEY` in the app's
 
 ```bash
 pip install pytest
-python -m pytest -q        # 36 offline tests, no keys or network needed
-python live_check.py       # live: same brief twice, a weak-data club, a Groq limit
+python -m pytest -q        # 49 offline tests, no keys or network needed
+python live_check.py       # live: same brief twice, weak-data club, Groq limit, agent, demographics
 ```
 
 ## Known limitations
@@ -86,6 +127,7 @@ These come from testing Qloo's coverage of southern Africa, and they are part of
 - **Local music coverage looks thin.** The artists specific to Kaizer Chiefs fans are mostly Nigerian Afrobeats and US R&B, with no amapiano.
 - **Club-versus-club differences are small.** Kaizer Chiefs and Orlando Pirates return similar brands and places. The strongest contrast is club fans versus the general audience.
 - **Budgets are illustrative splits, not quotes, and KPI targets are left to the club.**
+- **Voice input needs a Whisper model on the Groq key** (`python doctor.py` shows whether one is available); without one, the app asks people to type.
 
 ## Privacy
 

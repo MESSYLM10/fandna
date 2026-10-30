@@ -11,10 +11,12 @@ Colour carries meaning, taken from the South African flag:
   red = not found in Qloo · blue = the generic-AI answer
 """
 import html
+import re
 import time
 
 import streamlit as st
 
+import agent
 import brief as bf
 import demo_seed
 import qloo
@@ -97,6 +99,12 @@ ol.fd-list li::marker { color: #A3B0A9; font-size: .85em; }
 .fd-ev .t { color: var(--muted); font-size: .85rem; }
 .fd-miss { color: var(--red); font: 500 .92rem/1.4 "FD Archivo", sans-serif; margin: 4px 0 14px; }
 .fd-ev { margin: 0 0 14px; }
+.fd-q { font: 700 1.1rem/1.35 "FD Archivo", sans-serif; font-variation-settings: "wdth" 85; margin: 0 0 8px; }
+.fd-a { font: 400 1.02rem/1.6 "FD Archivo", sans-serif; margin: 0 0 12px; max-width: 75ch; }
+.fd-okname { color: var(--green); }
+.fd-noname { color: var(--red); text-decoration: underline wavy; text-underline-offset: 3px; }
+ol.fd-trace { margin: 4px 0 10px; padding-left: 1.3rem; font: 400 .88rem/1.5 "FD Archivo", sans-serif; color: var(--muted); }
+ol.fd-trace b { color: var(--ink); font-weight: 600; }
 .fd-obs { font: 500 .9rem/1.45 "FD Archivo", sans-serif; color: var(--green); background: #EAF4EE;
           border-radius: 6px; padding: 5px 9px; margin: 4px 0 4px; display: inline-block; }
 .fd-read { font: 400 .98rem/1.5 "FD Archivo", sans-serif; color: var(--ink); }
@@ -208,7 +216,7 @@ st.markdown(
     '<div class="fd-mark">FanDNA</div>'
     '<h1 class="fd-h1">Know what your fans love beyond the 90 minutes.</h1>'
     '<p class="fd-lede">FanDNA reads Qloo\'s taste data for a club\'s supporters and turns it into '
-    'campaign concepts with budgets and KPIs. Every claim is checked against that data before you see it.</p>',
+    'campaign concepts with budgets and KPIs, then researches your follow-up questions in Qloo itself. Every claim is checked against that data before you see it.</p>',
     unsafe_allow_html=True)
 hero_slot = st.empty()          # filled at the end, so the form never waits for it
 st.markdown(
@@ -408,6 +416,82 @@ def results(inp: dict):
         left, right = st.columns(2, gap="large")
         left.markdown(side("qloo", "FanDNA, built on Qloo", g, r["concepts"]), unsafe_allow_html=True)
         right.markdown(side("gen", "Generic AI, no Qloo data", gg, gen["concepts"]), unsafe_allow_html=True)
+
+    # ------------------------------------------------------------ 5. ask FanDNA
+    heading(5, "Ask FanDNA",
+            "Ask a follow-up. FanDNA decides which Qloo lookups to run, shows each one, and checks every "
+            "name in its answer against what Qloo returned.")
+    other = "Orlando Pirates" if "chiefs" in (club_name or "").lower() else "Kaizer Chiefs"
+    spec_brand = next(iter(ev["signals"].get("brands", {}).get("new_vs_baseline") or []), None)
+    short = re.sub(r"\s+F\.?C\.?$", "", club_name or "")
+    suggestions = ([(f"Compare with {other} fans", f"How do {short} fans differ from {other} fans in brands?")]
+                   if club_name else []) \
+        + ([(f"Who are {spec_brand}'s fans?", f"Who are {spec_brand}'s fans?")] if spec_brand else []) \
+        + [("Target women 18 to 35 instead", "What would change if we targeted women aged 18 to 35?")]
+    context = (f"the brief on screen is for {club_name or 'no club'}; audience: {who}; "
+               f"objective: {inp['objective']}")
+    picked = None
+    for col, (label, full) in zip(st.columns(len(suggestions)), suggestions):
+        if col.button(label, width="stretch", help=full):
+            picked = full
+    with st.form("ask_form", border=False):
+        typed = st.text_input("Your question", label_visibility="collapsed",
+                              placeholder="Ask about these fans, e.g. which places do they rank that "
+                                          "the whole audience doesn't?")
+        asked = st.form_submit_button("Ask FanDNA")
+    spoken = st.audio_input("Or ask by voice", help="Speak your question; FanDNA transcribes it with Whisper.")
+    heard = None
+    if spoken is not None:
+        audio = spoken.getvalue()
+        sig = hash(audio)
+        if ss.get("voice_sig") != sig:          # transcribe each recording once, not on every rerun
+            try:
+                with st.spinner("Transcribing"):
+                    ss.voice_text = agent.transcribe(audio)
+                ss.voice_sig = sig
+                heard = ss.voice_text or None
+            except bf.BriefError as e:
+                st.error(explain(e))
+        if ss.get("voice_text"):
+            st.caption(f"Heard: \u201c{ss.voice_text}\u201d")
+    question = picked or (typed.strip() if asked and typed.strip() else None) or heard
+    if question:
+        try:
+            with st.spinner("Researching in Qloo"):
+                ans = agent.ask(question, context)
+            ss.answers = [ans] + [a for a in ss.get("answers", []) if a["question"] != ans["question"]]
+        except (bf.BriefError, qloo.QlooError) as e:
+            st.error(explain(e))
+
+    labels = {"audience_tastes": "Audience tastes", "compare_clubs": "Compare clubs",
+              "entity_fans": "Fans of", "find_entity": "Find"}
+
+    def answer_html(a: dict) -> str:
+        ok = {v.lower() for v in a["verified"]}
+
+        def mark(m):
+            name = html.unescape(m.group(1))
+            cls = "fd-okname" if name.lower() in ok else "fd-noname"
+            tip = "" if cls == "fd-okname" else ' title="Not found in what Qloo returned"'
+            return f'<b class="{cls}"{tip}>{m.group(1)}</b>'
+
+        body = re.sub(r"\*\*(.+?)\*\*", mark, esc(a["answer"])).replace("\n", "<br>")
+        steps = "".join(
+            f'<li><b>{labels.get(x["tool"], x["tool"])}</b> '
+            f'{esc(", ".join(str(v) for v in x["args"].values()))}: {esc(x["summary"])}</li>' for x in a["steps"])
+        n = len(a["verified"]) + len(a["unverified"])
+        meta = (f'{len(a["verified"])} of {n} names found in Qloo\'s results. ' if n else "") + (
+            "Saved answer." if a.get("cached") else f'{a["seconds"]}s, {a["model"]}.')
+        miss = (f'<p class="fd-miss">Not in what Qloo returned, so unproven: {esc(", ".join(a["unverified"]))}</p>'
+                if a["unverified"] else "")
+        trace = (f'<div class="fd-meta">Qloo lookups</div><ol class="fd-trace">{steps}</ol>' if steps
+                 else '<div class="fd-meta">No Qloo lookup was needed.</div>')
+        return (f'<div class="fd-q">{esc(a["question"])}</div><div class="fd-a">{body}</div>{miss}'
+                f'{trace}<div class="fd-meta">{meta}</div>')
+
+    for a in ss.get("answers", [])[:3]:
+        with st.container(border=True):
+            st.markdown(answer_html(a), unsafe_allow_html=True)
 
     # ------------------------------------------------------------ provenance
     st.write("")

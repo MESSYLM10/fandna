@@ -19,7 +19,7 @@ def test_seed_roundtrip_serves_reviewed_brief_without_api_calls(tmp_path, monkey
     monkeypatch.setattr(brief, "_CLIENT", FakeGroq([json.dumps(NEW)]))
     ev = qloo.build_evidence(seed_query="Kaizer Chiefs")
     reviewed = brief.cached_brief(ev, "Kaizer Chiefs F.C.", "Fill the stadium", 250_000)
-    assert demo_seed.export(laptop) == {"qloo_results": 9, "briefs": 1}
+    assert demo_seed.export(laptop) == {"qloo_results": 9, "briefs": 1, "answers": 0}
 
     # On a fresh host: empty cache, APIs that must not be called.
     monkeypatch.setenv("FANDNA_CACHE", host)

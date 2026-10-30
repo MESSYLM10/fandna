@@ -91,7 +91,10 @@ for model in brief.MODELS:
     except Exception as e:  # noqa: BLE001
         print(BAD + f"{model}: {type(e).__name__}: {str(e)[:220]}")
 
-chat = [m for m in available if not any(w in m for w in ("whisper", "tts", "guard", "embed"))]
+chat = [m for m in available if not any(w in m for w in ("whisper", "tts", "guard", "embed", "orpheus"))]
+whisper = [m for m in available if "whisper" in m]
+print(("\n" + OK + "voice input available: " + ", ".join(whisper)) if whisper
+      else ("\n" + WARN + "no Whisper model on this key: voice input will ask people to type instead"))
 print("\nChat models this key can use:\n    " + "\n    ".join(chat))
 if working:
     print(f"\nReady. brief.py will use {working[0]} first.")

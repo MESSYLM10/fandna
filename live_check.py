@@ -7,6 +7,8 @@ Live checks against the real Qloo and Groq APIs, before a demo or a deploy:
 1. Same brief twice: the second run must cost 0 Qloo calls and 0 Groq calls.
 2. Weak-data club: does Qloo know a smaller African club, and does the app say so honestly?
 3. Groq limit: an oversized request must fail fast with a clear message, never loop.
+4. Ask FanDNA: the agent picks Qloo tools, answers, and every bold name is checked.
+5. Qloo demographics: does entity_fans get an age/gender breakdown for a brand?
 
 Uses about one Groq brief (~3,500 tokens) the first time; repeat runs are cached.
 """
@@ -92,6 +94,27 @@ try:
 except brief.BriefError as e:
     print(f"  message: {e}")
     check(time.time() - t0 < 15, f"failed fast ({time.time() - t0:.1f}s), one attempt per model, no loop")
+
+print("\n4. Ask FanDNA (agent)")
+import agent, tools  # noqa: E402
+try:
+    r = agent.ask("How do Kaizer Chiefs fans differ from Orlando Pirates fans in brands?", fresh=True)
+    for i, s in enumerate(r["steps"], 1):
+        print(f"  {i}. {s['tool']}({', '.join(f'{k}={v}' for k, v in s['args'].items())}) -> {s['summary']}")
+    print("  answer: " + r["answer"].replace("\n", " ")[:400])
+    print(f"  {r['model']}, {r['tokens']} tokens, {r['seconds']}s")
+    check(len(r["steps"]) >= 1, "the agent called at least one Qloo tool")
+    check(not r["unverified"], f"every bold name is in Qloo's results ({len(r['verified'])} verified, "
+                               f"unverified: {', '.join(r['unverified']) or 'none'})")
+except brief.BriefError as e:
+    check(False, f"agent failed: {e}")
+
+print("\n5. Qloo demographics")
+fans = tools.entity_fans("Bathu")
+print(f"  {fans}")
+check("age_affinity" in fans or "note" in fans, "entity_fans returns a breakdown or a clear note")
+if "note" in fans:
+    print("  (no breakdown: the agent will say so; tell Claude so the parser can be adjusted)")
 
 print("\nAll checks passed." if ok else "\nSome checks failed: see [FAIL] lines above.")
 sys.exit(0 if ok else 1)
